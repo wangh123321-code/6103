@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+:root {
+  --color-primary: #1B4332;
+  --color-primary-light: #2D6A4F;
+  --color-accent: #F77F00;
+  --color-accent-light: #FCBF49;
+  --color-bg: #F8F9FA;
+  --color-surface: #FFFFFF;
+  --color-text: #1A1A2E;
+  --color-text-muted: #6B7280;
+  --color-group: #4CC9F0;
+  --color-small: #06D6A0;
+  --color-private: #FFD166;
+  --color-danger: #EF4444;
+  --color-warning: #F59E0B;
+  --color-border: #E5E7EB;
+  --slot-width: 80px;
+  --coach-label-width: 140px;
+  --row-height: 60px;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --slot-width: 60px;
+    --coach-label-width: 100px;
+  }
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Noto Sans SC', sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  overflow: hidden;
+  height: 100vh;
+}
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.drag-over-valid {
+  background-color: rgba(247, 127, 0, 0.15) !important;
+  outline: 2px dashed var(--color-accent) !important;
+  outline-offset: -2px;
+}
+
+.drag-over-invalid {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+  outline: 2px dashed var(--color-danger) !important;
+  outline-offset: -2px;
+}
+
+.course-block {
+  cursor: grab;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.course-block:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.course-block:active {
+  cursor: grabbing;
+}
+
+.course-block.over-limit {
+  background-color: var(--color-danger) !important;
+  animation: pulse-red 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: var(--color-surface);
+  border-radius: 16px;
+  padding: 28px;
+  max-width: 440px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  animation: modal-in 0.25s ease-out;
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+@media (max-width: 640px) {
+  .coach-slots-area .course-block,
+  .coach-slots-area [role="button"] {
+    font-size: 9px;
+  }
+}
