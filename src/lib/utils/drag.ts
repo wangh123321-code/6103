@@ -76,6 +76,11 @@ export async function handleDrop(
     return false;
   }
 
+  // 提前读取已有课程的学员数据（必须在删除之前）
+  const existingStudentIds: string[] = dragData.isExistingCourse && dragData.courseId
+    ? (store.courses.find(c => c.id === dragData.courseId)?.studentIds ?? [])
+    : [];
+
   // 检查超时限制
   const overLimit = checkOverLimit(
     dragData.coachId,
@@ -104,9 +109,7 @@ export async function handleDrop(
       ? dragData.courseId
       : `course-${Date.now()}`,
     coachId: dragData.coachId,
-    studentIds: dragData.isExistingCourse
-      ? (store.courses.find(c => c.id === dragData.courseId)?.studentIds ?? [])
-      : [],
+    studentIds: existingStudentIds,
     type: dragData.courseType,
     dayOfWeek: targetDay,
     startHour: targetStartHour,

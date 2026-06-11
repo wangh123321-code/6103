@@ -11,7 +11,7 @@
 	import CourseDetailModal from './CourseDetailModal.svelte';
 
 	let hours = $derived(getHourRange());
-	let isDraggable = $derived(scheduleStore.viewRole === 'manager');
+	let isDraggable = $derived(scheduleStore.viewRole === 'manager' || scheduleStore.viewRole === 'coach');
 	let panelOpen = $state(true);
 
 	async function onDrop(dragData: DragData, targetDay: DayOfWeek, targetHour: number) {
@@ -29,6 +29,11 @@
 			const duration = dragData.sourceEndHour - dragData.sourceStartHour;
 			const targetEndHour = targetStartHour + duration;
 
+			// 必须在删除之前读取学员数据
+			const existingStudentIds = dragData.isExistingCourse && dragData.courseId
+				? (scheduleStore.courses.find(c => c.id === dragData.courseId)?.studentIds ?? [])
+				: [];
+
 			if (dragData.isExistingCourse && dragData.courseId) {
 				scheduleStore.removeCourse(dragData.courseId);
 			}
@@ -36,9 +41,7 @@
 			const newCourse: Course = {
 				id: dragData.isExistingCourse && dragData.courseId ? dragData.courseId : `course-${Date.now()}`,
 				coachId: dragData.coachId,
-				studentIds: dragData.isExistingCourse
-					? (scheduleStore.courses.find(c => c.id === dragData.courseId)?.studentIds ?? [])
-					: [],
+				studentIds: existingStudentIds,
 				type: dragData.courseType,
 				dayOfWeek: targetDay,
 				startHour: targetStartHour,
