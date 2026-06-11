@@ -3,6 +3,7 @@
 	import { getHourRange, formatHour } from '../utils/time';
 	import { MAX_DAILY_HOURS, START_HOUR, END_HOUR, COURSE_TYPE_LABELS, COURSE_TYPE_COLORS } from '../types';
 	import { createDragData, serializeDragData, deserializeDragData } from '../utils/drag';
+	import { scheduleStore } from '../stores/schedule.svelte';
 
 	let { coach, dayOfWeek, courses, isDraggable, onDrop, onCourseClick }: {
 		coach: Coach;
@@ -18,14 +19,43 @@
 	let isOverLimit = $derived(dailyHours > MAX_DAILY_HOURS);
 	let totalSlots = $derived(END_HOUR - START_HOUR);
 
+	// ============================================================
+	// 全局共享拖拽状态：从 store 读取，跨所有 CoachRow 组件同步
+	// ============================================================
+	let activeDragData = $derived(scheduleStore.activeDragData);
+	let dropHour = $state<number | null>(null);
+	let slotsArea: HTMLDivElement | null = null;
+
+	// ============================================================
+	// 问题 3 修复：整时段范围可用性检查
+	// ============================================================
+	function isRangeAvailable(startHour: number, endHour: number): boolean {
+		for (let h = startHour; h < endHour; h++) {
+			const inSlot = coach.availableSlots
+				.filter(s => s.dayOfWeek === dayOfWeek)
+				.some(s => h >= s.startHour && h < s.endHour);
+			if (!inSlot) return false;
+		}
+		return true;
+	}
+
+	// 问题 4 修复：支持排除自身课程
+	function isRangeOccupied(startHour: number, endHour: number, excludeCourseId?: string): boolean {
+		for (let h = startHour; h < endHour; h++) {
+			const occupied = courses.some(c => {
+				if (excludeCourseId && c.id === excludeCourseId) return false;
+				return h >= c.startHour && h < c.endHour;
+			});
+			if (occupied) return true;
+		}
+		return false;
+	}
+
+	// 仅用于 slot-cell 背景色（单小时）
 	function isHourAvailable(hour: number): boolean {
 		return coach.availableSlots
 			.filter(s => s.dayOfWeek === dayOfWeek)
 			.some(s => hour >= s.startHour && hour < s.endHour);
-	}
-
-	function isHourOccupied(hour: number): boolean {
-		return courses.some(c => hour >= c.startHour && hour < c.endHour);
 	}
 
 	let freeSlotBlocks = $derived.by(() => {
@@ -50,9 +80,6 @@
 		return result;
 	});
 
-	let slotsArea: HTMLDivElement | null = null;
-	let dropHour = $state<number | null>(null);
-
 	function getSlotWidth(): number {
 		if (!slotsArea) return 80;
 		const rect = slotsArea.getBoundingClientRect();
@@ -68,15 +95,47 @@
 		return Math.max(START_HOUR, Math.min(END_HOUR - 1, START_HOUR + hourIndex));
 	}
 
+	// ============================================================
+	// 完整的放置验证：范围检查 + 排除自身
+	// ============================================================
+	function validateDrop(targetStartHour: number): { valid: boolean; reason?: string } {
+		if (!activeDragData) return { valid: false, reason: 'no-drag-data' };
+		if (activeDragData.coachId !== coach.id) return { valid: false, reason: 'wrong-coach' };
+
+		const duration = activeDragData.sourceEndHour - activeDragData.sourceStartHour;
+		const targetEndHour = targetStartHour + duration;
+
+		if (targetEndHour > END_HOUR) return { valid: false, reason: 'out-of-bounds' };
+		if (!isRangeAvailable(targetStartHour, targetEndHour)) return { valid: false, reason: 'not-available' };
+
+		const excludeId = activeDragData.isExistingCourse ? activeDragData.courseId : undefined;
+		if (isRangeOccupied(targetStartHour, targetEndHour, excludeId)) return { valid: false, reason: 'occupied' };
+
+		return { valid: true };
+	}
+
+	// ============================================================
+	// 问题 1、4、5 修复：dragover 使用共享状态，无效时清除 dropHour
+	// ============================================================
 	function handleAreaDragOver(e: DragEvent) {
 		e.preventDefault();
-		if (!isDraggable) return;
+		if (!isDraggable || !activeDragData || activeDragData.coachId !== coach.id) {
+			dropHour = null;
+			if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
+			return;
+		}
+
 		const targetHour = computeTargetHour(e);
-		if (isHourAvailable(targetHour) && !isHourOccupied(targetHour)) {
+		const validation = validateDrop(targetHour);
+
+		// 问题 5 修复：只有有效目标才显示虚线框
+		if (validation.valid) {
 			dropHour = targetHour;
-			if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+			if (e.dataTransfer) {
+				e.dataTransfer.dropEffect = activeDragData.isExistingCourse ? 'move' : 'copy';
+			}
 		} else {
-			dropHour = targetHour;
+			dropHour = null;
 			if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
 		}
 	}
@@ -87,17 +146,29 @@
 		}
 	}
 
+	function handleGlobalDragEnd() {
+		scheduleStore.activeDragData = null;
+		dropHour = null;
+	}
+
+	// ============================================================
+	// 问题 1、2 修复：drop 时调用 onDrop
+	// ============================================================
 	function handleAreaDrop(e: DragEvent) {
 		e.preventDefault();
-		if (!isDraggable) {
-			dropHour = null;
-			return;
-		}
-		const targetHour = computeTargetHour(e);
+		const wasActive = !!activeDragData && activeDragData.coachId === coach.id;
 		dropHour = null;
+		scheduleStore.activeDragData = null;
+
+		if (!isDraggable || !wasActive) return;
+
+		const targetHour = computeTargetHour(e);
+		const validation = validateDrop(targetHour);
+		if (!validation.valid) return;
 
 		const json = e.dataTransfer?.getData('text/plain');
 		if (!json) return;
+
 		try {
 			const dragData = deserializeDragData(json);
 			onDrop(dragData, dayOfWeek, targetHour);
@@ -106,16 +177,25 @@
 		}
 	}
 
+	// ============================================================
+	// 问题 1 修复：课程拖拽开始时写入 store，所有行共享
+	// ============================================================
 	function handleCourseDragStart(e: DragEvent, course: Course) {
 		if (!isDraggable) { e.preventDefault(); return; }
 		const data = createDragData(coach.id, dayOfWeek, course.startHour, course.endHour, course.type, true, course.id);
+		scheduleStore.activeDragData = data;
 		e.dataTransfer!.setData('text/plain', serializeDragData(data));
 		e.dataTransfer!.effectAllowed = 'move';
 	}
 
+	// ============================================================
+	// 问题 2 修复：可授课块拖拽开始时写入 store，创建新课
+	// ============================================================
 	function handleSlotDragStart(e: DragEvent, slot: { startHour: number; endHour: number }) {
 		if (!isDraggable) { e.preventDefault(); return; }
-		const data = createDragData(coach.id, dayOfWeek, slot.startHour, slot.endHour, 'private', false);
+		// 新创建的课程默认 1 小时时长，店长后续可编辑
+		const data = createDragData(coach.id, dayOfWeek, slot.startHour, slot.startHour + 1, 'group', false);
+		scheduleStore.activeDragData = data;
 		e.dataTransfer!.setData('text/plain', serializeDragData(data));
 		e.dataTransfer!.effectAllowed = 'copy';
 	}
@@ -130,7 +210,16 @@
 		const w = (endHour - startHour) * sw;
 		return `left: ${(startHour - START_HOUR) * sw}px; width: ${w}px;`;
 	}
+
+	// 问题 3 修复：高亮整个拖拽覆盖的小时范围（多小时）
+	function isInDropRange(hour: number): boolean {
+		if (dropHour === null || !activeDragData) return false;
+		const duration = activeDragData.sourceEndHour - activeDragData.sourceStartHour;
+		return hour >= dropHour && hour < dropHour + duration;
+	}
 </script>
+
+<svelte:window ondragend={handleGlobalDragEnd} />
 
 <div class="flex relative coach-row-container">
 	<div class="coach-label w-[100px] sm:w-[140px] flex-shrink-0 flex flex-col items-center justify-center border-r border-b border-gray-200 bg-white px-1 sm:px-2">
@@ -154,7 +243,7 @@
 		{#each hours as hour (hour)}
 			<div
 				role="gridcell"
-				class="slot-cell absolute top-0 h-full border-r border-b border-gray-200 {isHourAvailable(hour) ? 'bg-gray-50' : 'bg-white'} {dropHour === hour && isHourAvailable(hour) && !isHourOccupied(hour) ? 'drag-over-valid' : ''} {dropHour === hour && (!isHourAvailable(hour) || isHourOccupied(hour)) ? 'drag-over-invalid' : ''}"
+				class="slot-cell absolute top-0 h-full border-r border-b border-gray-200 {isHourAvailable(hour) ? 'bg-gray-50' : 'bg-white'} {isInDropRange(hour) ? 'drag-over-valid' : ''}"
 				style={cellSlotStyle(hour)}
 				tabindex={-1}
 			></div>
@@ -164,7 +253,7 @@
 			<div
 				role="button"
 				tabindex={isDraggable ? 0 : undefined}
-				class="absolute top-0 z-[1] flex flex-col items-center justify-center rounded border-l-[3px]"
+				class="absolute top-0 z-[1] flex flex-col items-center justify-center rounded border-l-[3px] pointer-events-auto"
 				style="{blockStyle(slot.startHour, slot.endHour)} height: 60px; background-color: {coach.color}15; border-left-color: {coach.color}; cursor: {isDraggable ? 'grab' : 'default'};"
 				draggable={isDraggable ? 'true' : undefined}
 				ondragstart={(e) => handleSlotDragStart(e, slot)}
@@ -176,7 +265,7 @@
 
 		{#each courses as course (course.id)}
 			<div
-				class="course-block absolute top-0 z-[5] flex flex-col items-center justify-center rounded {isOverLimit ? 'over-limit' : ''}"
+				class="course-block absolute top-0 z-[5] flex flex-col items-center justify-center rounded pointer-events-auto {isOverLimit ? 'over-limit' : ''}"
 				style="{blockStyle(course.startHour, course.endHour)} height: 60px; background-color: {COURSE_TYPE_COLORS[course.type]}; cursor: {isDraggable ? 'grab' : 'pointer'};"
 				draggable={isDraggable ? 'true' : undefined}
 				ondragstart={(e) => handleCourseDragStart(e, course)}

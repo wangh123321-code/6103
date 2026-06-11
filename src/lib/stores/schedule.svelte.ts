@@ -13,6 +13,7 @@ function createScheduleStore() {
   let viewRole = $state<ViewRole>('manager');
   let selectedStudentId = $state<string | null>(null);
   let showCourseDetail = $state<Course | null>(null);
+  let activeDragData = $state<DragData | null>(null);
   let showConflictModal = $state<ConflictResult | null>(null);
   let showOverLimitModal = $state<OverLimitResult | null>(null);
   let pendingDropData = $state<{ dragData: DragData; targetDay: DayOfWeek; targetStartHour: number } | null>(null);
@@ -81,6 +82,8 @@ function createScheduleStore() {
     set selectedStudentId(value: string | null) { selectedStudentId = value; },
     get showCourseDetail() { return showCourseDetail; },
     set showCourseDetail(value: Course | null) { showCourseDetail = value; },
+    get activeDragData() { return activeDragData; },
+    set activeDragData(value: DragData | null) { activeDragData = value; },
     get showConflictModal() { return showConflictModal; },
     set showConflictModal(value: ConflictResult | null) { showConflictModal = value; },
     get showOverLimitModal() { return showOverLimitModal; },
